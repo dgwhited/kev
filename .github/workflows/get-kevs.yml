@@ -61,7 +61,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
-          TODAY=$(date +'%Y-%m-%d')
-          gh release create "kev-update-${TODAY}" \
-            --title "KEV Update ${TODAY}" \
-            --notes "Changes detected in Known Exploited Vulnerabilities:
+          TIMESTAMP=$(date +'%Y-%m-%d-%H%M%S')
+          gh release create "kev-update-${TIMESTAMP}" \
+          --title "KEV Update ${TIMESTAMP}" \
+          --notes "Changes detected in Known Exploited Vulnerabilities:
