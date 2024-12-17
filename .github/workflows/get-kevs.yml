@@ -2,7 +2,7 @@ name: get-kevs
 
 on:
   schedule:
-    - cron: '55 */8 * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 
@@ -26,8 +26,42 @@ jobs:
       - name: Get KEVs
         run: python get_kevs.py
 
-      - name: Commit and Push
-        run: ./.github/commit-and-push.sh
+      - name: Check for Changes
+        id: changes
+        run: |
+          # Show current status for debugging
+          git status
+          # Add the file and capture the diff
+          git add known_exploited_vulnerabilities.json
+          # Check if there are staged changes
+          git diff --cached --quiet || echo "changes=true" >> $GITHUB_OUTPUT
+          if git diff --cached --quiet; then
+            echo "No changes detected"
+          else
+            echo "DIFF<<EOF" >> $GITHUB_OUTPUT
+            git diff --cached >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit Changes
+        if: steps.changes.outputs.changes == 'true'
+        run: |
+          git config --global user.email "${EMAIL}"
+          git config --global user.name "${NAME}"
+          git remote set-url origin https://x-access-token:${PAT}@github.com/${GITHUB_REPOSITORY}.git
+          git commit -m "New KEVs Detected"
+          git push
         env:
           NAME: ${{ secrets.NAME }}
           EMAIL: ${{ secrets.EMAIL }}
+          PAT: ${{ secrets.PAT }}
+
+      - name: Create Release
+        if: steps.changes.outputs.changes == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          TODAY=$(date +'%Y-%m-%d')
+          gh release create "kev-update-${TODAY}" \
+            --title "KEV Update ${TODAY}" \
+            --notes "Changes detected in Known Exploited Vulnerabilities:
