@@ -1,0 +1,33 @@
+name: get-kevs
+
+on:
+  schedule:
+    - cron: '55 */8 * * *'
+  workflow_dispatch:
+
+
+jobs:
+  runbooks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v 4.2.2
+        with:
+          token: ${{secrets.PAT}}
+
+      - name: INSTALL - python@3.10
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # 5.2.2
+        with:
+          python-version: '3.13'
+
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      - name: Get KEVs
+        run: python get_kevs.py
+
+      - name: Commit and Push
+        run: ./.github/commit-and-push.sh
+        env:
+          NAME: ${{ secrets.NAME }}
+          EMAIL: ${{ secrets.EMAIL }}
