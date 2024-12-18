@@ -1,13 +1,11 @@
 name: get-kevs
-
 on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
 
-
 jobs:
-  runbooks:
+  kevs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -29,25 +27,33 @@ jobs:
             exit 1
           fi
           
-          # Print total number of vulnerabilities
+          # Print catalog version and total vulnerabilities
+          CATALOG_VERSION=$(jq -r '.catalogVersion' "$OUTPUT_FILE")
           TOTAL_VULNS=$(jq '.vulnerabilities | length' "$OUTPUT_FILE")
+          echo "Catalog Version: $CATALOG_VERSION"
           echo "Total vulnerabilities in catalog: $TOTAL_VULNS"
 
       - name: Check for Changes
         id: changes
         run: |
-          # Show current status for debugging
-          git status
-          # Add the file and capture the diff
-          git add known_exploited_vulnerabilities.json
-          # Check if there are staged changes
-          git diff --cached --quiet || echo "changes=true" >> $GITHUB_OUTPUT
-          if git diff --cached --quiet; then
-            echo "No changes detected"
-          else
-            echo "DIFF<<EOF" >> $GITHUB_OUTPUT
-            git diff --cached >> $GITHUB_OUTPUT
+          # Check if there are changes
+          if ! git diff --quiet known_exploited_vulnerabilities.json; then
+            # Capture the specific changes
+            CHANGES=$(jq -n \
+              --argjson old "$(git show HEAD:known_exploited_vulnerabilities.json)" \
+              --argjson new "$(cat known_exploited_vulnerabilities.json)" \
+              '{
+                added_vulns: ($new.vulnerabilities | map(.cveID) - $old.vulnerabilities | map(.cveID)),
+                removed_vulns: ($old.vulnerabilities | map(.cveID) - $new.vulnerabilities | map(.cveID)),
+                catalog_version: $new.catalogVersion
+              }')
+            
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "details<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGES" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Commit Changes
@@ -56,7 +62,8 @@ jobs:
           git config --global user.email "${EMAIL}"
           git config --global user.name "${NAME}"
           git remote set-url origin https://x-access-token:${PAT}@github.com/${GITHUB_REPOSITORY}.git
-          git commit -m "New KEVs Detected"
+          git add known_exploited_vulnerabilities.json
+          git commit -m "Update KEV Catalog to version ${{ fromJson(steps.changes.outputs.details).catalog_version }}"
           git push
         env:
           NAME: ${{ secrets.NAME }}
@@ -69,6 +76,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
           TIMESTAMP=$(date +'%Y-%m-%d-%H%M%S')
+          CHANGES_DETAILS='${{ steps.changes.outputs.details }}'
+          
           gh release create "kev-update-${TIMESTAMP}" \
-            --title "KEV Update ${TIMESTAMP}" \
-            --notes "Changes detected in Known Exploited Vulnerabilities: ${{ steps.changes.outputs.changes }}"
+            --title "KEV Catalog Update $(echo "$CHANGES_DETAILS" | jq -r '.catalog_version')" \
+            --notes "Changes in CISA Known Exploited Vulnerabilities Catalog:
+
+          Catalog Version: $(echo "$CHANGES_DETAILS" | jq -r '.catalog_version')
+
+          Added Vulnerabilities:
+          $(echo "$CHANGES_DETAILS" | jq -r '.added_vulns | map("- " + .) | join("\n")')
+
+          Removed Vulnerabilities:
+          $(echo "$CHANGES_DETAILS" | jq -r '.removed_vulns | map("- " + .) | join("\n")')"
