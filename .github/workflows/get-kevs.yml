@@ -63,5 +63,5 @@ jobs:
         run: |
           TIMESTAMP=$(date +'%Y-%m-%d-%H%M%S')
           gh release create "kev-update-${TIMESTAMP}" \
-          --title "KEV Update ${TIMESTAMP}" \
-          --notes "Changes detected in Known Exploited Vulnerabilities:
+            --title "KEV Update ${TIMESTAMP}" \
+            --notes "Changes detected in Known Exploited Vulnerabilities: ${{ steps.changes.outputs.changes }}"
