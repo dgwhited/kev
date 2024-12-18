@@ -36,16 +36,33 @@ jobs:
       - name: Check for Changes
         id: changes
         run: |
-          # Check if there are changes
-          if ! git diff --quiet known_exploited_vulnerabilities.json; then
-            # Capture the specific changes
+          # Fetch the previous version of the file
+          git show HEAD:known_exploited_vulnerabilities.json > previous_catalog.json 2>/dev/null || touch previous_catalog.json
+          
+          # Use separate jq commands to avoid long argument lists
+          ADDED_VULNS=$(jq -n \
+            --slurpfile old previous_catalog.json \
+            --slurpfile new known_exploited_vulnerabilities.json \
+            '($new[0].vulnerabilities | map(.cveID)) - ($old[0].vulnerabilities | map(.cveID) | select(. != null))')
+          
+          REMOVED_VULNS=$(jq -n \
+            --slurpfile old previous_catalog.json \
+            --slurpfile new known_exploited_vulnerabilities.json \
+            '($old[0].vulnerabilities | map(.cveID)) - ($new[0].vulnerabilities | map(.cveID) | select(. != null))')
+          
+          CATALOG_VERSION=$(jq -r '.catalogVersion' known_exploited_vulnerabilities.json)
+          
+          # Check if there are actual changes
+          if [ "$(echo "$ADDED_VULNS" | jq length)" -gt 0 ] || [ "$(echo "$REMOVED_VULNS" | jq length)" -gt 0 ]; then
+            # Construct changes JSON
             CHANGES=$(jq -n \
-              --argjson old "$(git show HEAD:known_exploited_vulnerabilities.json)" \
-              --argjson new "$(cat known_exploited_vulnerabilities.json)" \
+              --argjson added "$ADDED_VULNS" \
+              --argjson removed "$REMOVED_VULNS" \
+              --arg version "$CATALOG_VERSION" \
               '{
-                added_vulns: ($new.vulnerabilities | map(.cveID) - $old.vulnerabilities | map(.cveID)),
-                removed_vulns: ($old.vulnerabilities | map(.cveID) - $new.vulnerabilities | map(.cveID)),
-                catalog_version: $new.catalogVersion
+                added_vulns: $added,
+                removed_vulns: $removed,
+                catalog_version: $version
               }')
             
             echo "changes=true" >> $GITHUB_OUTPUT
@@ -55,6 +72,7 @@ jobs:
           else
             echo "changes=false" >> $GITHUB_OUTPUT
           fi
+        shell: bash
 
       - name: Commit Changes
         if: steps.changes.outputs.changes == 'true'
