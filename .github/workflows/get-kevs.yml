@@ -15,16 +15,23 @@ jobs:
         with:
           token: ${{secrets.PAT}}
 
-      - name: INSTALL - python@3.10
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # 5.2.2
-        with:
-          python-version: '3.13'
-
-      - name: Install requirements
-        run: pip install -r requirements.txt
-
-      - name: Get KEVs
-        run: python get_kevs.py
+      - name: Download CISA KEV Catalog
+        run: |
+          KEV_URL="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+          OUTPUT_FILE="known_exploited_vulnerabilities.json"
+          
+          # Download the JSON file using curl
+          curl -L "$KEV_URL" -o "$OUTPUT_FILE"
+          
+          # Validate the downloaded file
+          if ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+            echo "Error: Downloaded file is not valid JSON"
+            exit 1
+          fi
+          
+          # Print total number of vulnerabilities
+          TOTAL_VULNS=$(jq '.vulnerabilities | length' "$OUTPUT_FILE")
+          echo "Total vulnerabilities in catalog: $TOTAL_VULNS"
 
       - name: Check for Changes
         id: changes
